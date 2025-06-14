@@ -1,5 +1,3 @@
-<details>
-<summary>
 import streamlit as st
 import uuid
 import os
@@ -48,5 +46,3 @@ if view_id:
             st.markdown(f"**업로드 파일**: [다운로드]({file_path})")
     else:
         st.error("해당 ID의 결과가 존재하지 않습니다.")
-</summary>
-</details>
