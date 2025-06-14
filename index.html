@@ -43,9 +43,10 @@
     }
     .extract-btn:disabled {background:#a5b6d9; color:#fff; cursor:not-allowed;}
     .compare-title {font-size:1.16em; font-weight:600; color:#2456b1; margin:0 0 13px 0;}
-    .diff {color:#e13939;font-weight:600;}
+    .diff {color:#e13939;font-weight:700;}
     .plus {color:#2352b1;font-weight:600;}
     .ok {color:#158412;}
+    .mismatch {color:#e13939;font-weight:700;}
     @media (max-width:950px) {
       .result-row {flex-direction:column; gap:20px;}
       .compare-row {flex-direction:column;}
@@ -178,13 +179,13 @@
         const trimKeys = Array.from(new Set([...Object.keys(pcCompareMap), ...Object.keys(moCompareMap)]));
         trimKeys.forEach(trim => {
           compareHTML += `<div style="font-weight:600;font-size:1.12em;margin:12px 0 7px 0;color:#174ac2;">▶ ${trim}</div>`;
-          const pcList = new Set(pcCompareMap[trim] || []);
-          const moList = new Set(moCompareMap[trim] || []);
-          let allItems = new Set([...pcList, ...moList]);
+          const pcList = Array.from(new Set(pcCompareMap[trim] || []));
+          const moList = Array.from(new Set(moCompareMap[trim] || []));
+          let allItems = Array.from(new Set([...pcList, ...moList]));
           let rows = '';
           allItems.forEach(item => {
-            const inPC = pcList.has(item);
-            const inMO = moList.has(item);
+            const inPC = pcList.includes(item);
+            const inMO = moList.includes(item);
             if (inPC && inMO) {
               rows += `<div class="ok">✔️ ${item}</div>`;
             } else if (inPC) {
@@ -237,6 +238,11 @@
         }
         reader.readAsText(file, 'UTF-8');
       });
+
+      function normalize(str) {
+        return (str||"").replace(/\s+/g, '').replace(/[^\w가-힣]/g,'').toLowerCase();
+      }
+
       function extractCompare2() {
         if (!htmlContent2) return;
         const parser = new DOMParser();
@@ -250,23 +256,57 @@
         const trimKeys = Array.from(new Set([...Object.keys(pcSpecMap), ...Object.keys(moSpecMap)]));
         trimKeys.forEach(trim => {
           compareHTML += `<div style="font-weight:600;font-size:1.12em;margin:12px 0 7px 0;color:#174ac2;">▶ ${trim}</div>`;
-          const pcList = new Set(pcSpecMap[trim] || []);
-          const moList = new Set(moSpecMap[trim] || []);
-          let allItems = new Set([...pcList, ...moList]);
-          let rows = '';
-          allItems.forEach(item => {
-            const inPC = pcList.has(item);
-            const inMO = moList.has(item);
-            if (inPC && inMO) {
-              rows += `<div class="ok">✔️ ${item}</div>`;
-            } else if (inPC) {
-              rows += `<div class="diff">PC만 있음: ${item}</div>`;
-            } else {
-              rows += `<div class="plus">모바일만 있음: ${item}</div>`;
+          const pcList = Array.from(new Set(pcSpecMap[trim] || []));
+          const moList = Array.from(new Set(moSpecMap[trim] || []));
+          // 1. 정규화해서 매칭 가능한 쌍 생성(문구가 비슷한데 공백/기호만 다른 케이스 체크)
+          let matched = new Set();
+          let moNormalized = moList.map(x=>normalize(x));
+          let pcNormalized = pcList.map(x=>normalize(x));
+          // 완전일치(문구)
+          let both = [];
+          pcList.forEach((pcItem, idx) => {
+            let n = normalize(pcItem);
+            let moIdx = moNormalized.indexOf(n);
+            if(moIdx !== -1) {
+              both.push({pc:pcItem, mo:moList[moIdx], match:true});
+              matched.add(moList[moIdx]);
             }
           });
-          if (!rows) rows = `<div style="color:#aaa">- 비교할 항목 없음 -</div>`;
-          compareHTML += `<div style="margin-left:16px;">${rows}</div>`;
+          // 불일치(텍스트 다름)
+          pcList.forEach((pcItem, idx) => {
+            let n = normalize(pcItem);
+            let moIdx = moNormalized.indexOf(n);
+            if(moIdx === -1) {
+              // PC 기준으로 비슷한 항목 찾기(문자길이 유사, 70% 이상 공통문자 등)
+              let found = false;
+              moList.forEach(moItem => {
+                if (matched.has(moItem)) return;
+                if (pcItem && moItem && (pcItem.includes(moItem) || moItem.includes(pcItem))) {
+                  compareHTML += `<div class="mismatch">불일치(PC: ${pcItem} / 모바일: ${moItem})</div>`;
+                  matched.add(moItem); found = true;
+                }
+              });
+              if(!found && !matched.has(pcItem)) compareHTML += `<div class="diff">PC만 있음: ${pcItem}</div>`;
+            }
+          });
+          // 모바일만 있는 것
+          moList.forEach((moItem, idx) => {
+            let n = normalize(moItem);
+            let pcIdx = pcNormalized.indexOf(n);
+            if(pcIdx === -1 && !matched.has(moItem)) {
+              // PC쪽과 비슷한 항목이 없는 경우에만
+              compareHTML += `<div class="plus">모바일만 있음: ${moItem}</div>`;
+            }
+          });
+          // 완전일치
+          both.forEach(({pc, mo}) => {
+            if (pc === mo) {
+              compareHTML += `<div class="ok">✔️ ${pc}</div>`;
+            } else {
+              compareHTML += `<div class="mismatch">불일치(PC: ${pc} / 모바일: ${mo})</div>`;
+            }
+          });
+          compareHTML += `<hr style="border:none;border-top:1px dashed #e3e3e3;margin:10px 0 10px 0;">`;
         });
         document.getElementById('compareResult2').innerHTML = compareHTML;
       }
@@ -329,6 +369,10 @@
             if (desc && desc.textContent) label = desc.textContent.replace(/[\n\r]+/g,'').replace(/<br>/g,' ').trim();
             result += label ? `${label}: ${el.textContent.trim()}\n` : `${el.textContent.trim()}\n`;
           });
+          // ===== [선택품목 중복 버그 완벽 해결] =====
+          // 모든 선택품목을 Set에 넣어서 중복 없이 1회만 수집
+          let allSelects = new Set();
+          // 기본품목
           div.querySelectorAll('ul[data-opts="basic"]').forEach(ul => {
             ul.querySelectorAll('li').forEach(li => {
               const cat = li.querySelector('button')?.textContent.trim() ?? '';
@@ -337,32 +381,18 @@
               opts.forEach(opt => { if (opt) { result += `  - ${opt}\n`; specList.push(opt); } });
             });
           });
-          div.querySelectorAll('.list-item ul[data-opts="select"]').forEach(ul => {
-            ul.querySelectorAll('li').forEach(li => {
-              const name = li.querySelector('.item-name')?.textContent.trim() ?? '';
-              const price = li.querySelector('.item-price')?.textContent.trim() ?? '';
-              if(name) {
-                result += `  - ${name}${price ? ` (${price})` : ''}\n`;
-                specList.push(name);
-              }
-            });
-          });
-          div.querySelectorAll('ul[data-opts="select"]').forEach(ul => {
-            if(!ul.closest('.list-item')) {
-              ul.querySelectorAll('li').forEach(li => {
-                const name = li.querySelector('.item-name')?.textContent.trim() ?? '';
-                const price = li.querySelector('.item-price')?.textContent.trim() ?? '';
-                if(name) {
-                  result += `  - ${name}${price ? ` (${price})` : ''}\n`;
-                  specList.push(name);
-                }
-              });
+          // 선택품목 (중복 완전 제거)
+          div.querySelectorAll('ul[data-opts="select"] li').forEach(li => {
+            const name = li.querySelector('.item-name')?.textContent.trim() ?? '';
+            if(name && !allSelects.has(name)) {
+              allSelects.add(name);
+              specList.push(name);
             }
           });
           result += '\n';
           moTrims[trimKey] = {};
           allText += result;
-          moSpecMap[trimKey] = specList;
+          moSpecMap[trimKey] = Array.from(allSelects);
         });
         return { moTrims, allText: allText.trim(), moSpecMap };
       }
