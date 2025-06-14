@@ -1,48 +1,83 @@
 import streamlit as st
-import uuid
 import os
+import uuid
 import json
+from bs4 import BeautifulSoup
 
-os.makedirs("results", exist_ok=True)
-os.makedirs("uploads", exist_ok=True)
+st.set_page_config(page_title="사양 추출기 + 이력 저장", layout="wide")
 
-st.title("📄 파일 업로드 & 텍스트 저장 웹앱")
+DATA_DIR = "saved_specs"
+os.makedirs(DATA_DIR, exist_ok=True)
 
-user_text = st.text_area("📝 텍스트 입력", height=200)
-uploaded_file = st.file_uploader("📎 파일 업로드", type=None)
+def extract_specs(html: str, mode: str) -> str:
+    soup = BeautifulSoup(html, "html.parser")
+    result = ""
 
-if st.button("✅ 저장하고 공유 링크 생성하기"):
-    if not user_text and not uploaded_file:
-        st.warning("텍스트나 파일 중 하나는 입력해야 합니다.")
-    else:
-        unique_id = str(uuid.uuid4())
+    if mode == "pc":
+        wraps = soup.select(".item_wrap")
+        for wrap in wraps:
+            title = wrap.select_one(".item_tit")
+            category = title.get_text(strip=True) if title else ""
+            if category:
+                result += f"\n[카테고리] {category}\n"
 
-        data = {"id": unique_id, "text": user_text}
+            for a in wrap.select("a"):
+                id_ = a.get("data-modal-id")
+                name = a.get_text(strip=True)
+                if id_ and name:
+                    result += f"- {id_} {name}\n"
+            result += "\n"
 
-        if uploaded_file is not None:
-            file_path = f"uploads/{unique_id}_{uploaded_file.name}"
-            with open(file_path, "wb") as f:
-                f.write(uploaded_file.read())
-            data["filename"] = uploaded_file.name
+    elif mode == "mo":
+        items = soup.select(".accordion__list > li")
+        for li in items:
+            title = li.select_one("button")
+            category = title.get_text(strip=True) if title else ""
+            if category:
+                result += f"\n[카테고리] {category}\n"
 
-        with open(f"results/{unique_id}.json", "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+            for item in li.select("li"):
+                a = item.select_one("a")
+                if a:
+                    id_ = a.get("data-modal-id")
+                    name = a.get_text(strip=True)
+                    if id_ and name:
+                        result += f"- {id_} {name}\n"
+            result += "\n"
 
-        share_url = f"?view_id={unique_id}"
-        st.success("✅ 저장 완료!")
-        st.markdown(f"🔗 [공유 링크 보기](/{share_url})")
-        st.markdown(f"URL 복사: `{share_url}`")
+    return result.strip()
 
-view_id = st.query_params.get("view_id")
-if view_id:
-    result_path = f"results/{view_id}.json"
-    if os.path.exists(result_path):
-        with open(result_path, "r", encoding="utf-8") as f:
-            result = json.load(f)
-        st.header("📄 저장된 결과 보기")
-        st.markdown(f"**입력 텍스트**: {result['text']}")
-        if "filename" in result:
-            file_path = f"uploads/{view_id}_{result['filename']}"
-            st.markdown(f"**업로드 파일**: [다운로드]({file_path})")
-    else:
-        st.error("해당 ID의 결과가 존재하지 않습니다.")
+st.title("📄 기아 가격표 HTML 사양 추출기 + 이력 저장")
+
+tab1, tab2 = st.tabs(["📤 새 작업", "📚 저장된 이력"])
+
+with tab1:
+    uploaded_file = st.file_uploader("HTML 파일 업로드", type=["html"])
+    mode = st.radio("버전 선택", ["pc", "mo"], horizontal=True)
+    description = st.text_input("이 작업에 대한 설명을 입력하세요 (예: 2025 카니발 가격표)")
+
+    if uploaded_file:
+        html = uploaded_file.read().decode("utf-8")
+        result = extract_specs(html, mode)
+        st.text_area("📌 추출 결과", result, height=400)
+
+        if st.button("💾 이 작업 저장하기"):
+            uid = str(uuid.uuid4())
+            save_data = {
+                "id": uid,
+                "description": description,
+                "filename": uploaded_file.name,
+                "mode": mode,
+                "result": result
+            }
+            with open(f"{DATA_DIR}/{uid}.json", "w", encoding="utf-8") as f:
+                json.dump(save_data, f, ensure_ascii=False, indent=2)
+            st.success("✅ 저장 완료! '저장된 이력' 탭에서 확인하세요.")
+
+with tab2:
+    files = sorted(os.listdir(DATA_DIR), reverse=True)
+    for fname in files:
+        with open(f"{DATA_DIR}/{fname}", encoding="utf-8") as f:
+            data = json.load(f)
+        with st.expander(f"🗂 {data['description']} ({data['filename']})"):
+            st.code(data["result"], language="text")
