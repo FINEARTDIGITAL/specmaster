@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>가격표(PC-모바일 비교) Tool</title>
+  <style>
+    body { font-family: 'Apple SD Gothic Neo', sans-serif; background: #f8f9fa; margin:0; }
+    .header { text-align:center; font-size:2.1rem; font-weight:700; color:#1a326a; margin-top:38px; margin-bottom:36px; letter-spacing:-2px; }
+    .nav { display:flex; justify-content:center; gap:2px; border-bottom:2px solid #e2e6f2; margin-bottom:32px; background:#f8f9fa; }
+    .nav-btn {
+      font-size:1.15em; font-weight:600; border:none; background:none; padding:12px 60px 13px 60px; 
+      cursor:pointer; color:#789; border-radius:14px 14px 0 0;
+      transition:all .13s; outline:none; margin:0 1px;
+    }
+    .nav-btn.active { background:#fff; color:#2351a5; border:1.5px solid #d4d9ee; border-bottom:none; }
+    .tab-content { display:none; }
+    .tab-content.active { display:block; }
+    .tab-section { padding:0 0 44px 0; max-width:1200px; margin:0 auto;}
+    .upload-wrap {margin-bottom:16px;}
+    .result-row { display: flex; gap: 38px; }
+    .result-box {
+      flex: 1; background: #fff; border: 1.5px solid #d3d7e4;
+      border-radius: 16px; white-space: pre-wrap; position: relative;
+      min-width: 330px; box-shadow:0 2px 13px #bcc5df26; padding: 26px 18px 28px 24px;
+      margin-top:0; margin-bottom:0;
+      display:flex; flex-direction:column; align-items:stretch;
+    }
+    .result-box h3 {
+      font-size:1.16em; font-weight:600; color:#2456b1; margin:0 0 11px 0;
+    }
+    .copy-btn {
+      position: absolute; top: 22px; right: 22px;
+      background:#276beb; color:#fff; border:none; border-radius:7px;
+      padding: 7px 20px; font-size:1em; cursor:pointer; box-shadow:0 2px 8px #2563eb22; font-weight:500;
+      transition:background .13s;
+    }
+    .copy-btn:hover { background:#174ac2; }
+    input[type="file"] {margin-bottom: 0px; }
+    button[type="button"], button[type="submit"] {
+      font-family: inherit; font-size:1em; margin-left:9px;
+    }
+    .extract-btn {
+      padding: 8px 24px; background: #2563eb; color: white; border: none; border-radius: 6px;
+      font-size:1.07em; font-weight:600; cursor: pointer; box-shadow:0 2px 8px #2563eb14; margin-bottom:10px;
+      margin-left:10px;
+    }
+    .extract-btn:disabled {background:#a5b6d9; color:#fff; cursor:not-allowed;}
+    @media (max-width:950px) {
+      .result-row {flex-direction:column; gap:20px;}
+      .tab-section {padding:0 3vw 44px 3vw;}
+      .nav-btn {font-size:1em; padding:11px 8vw;}
+      .result-box {padding: 18px 10px 18px 14px;}
+    }
+  </style>
+</head>
+<body>
+  <div class="header">가격표(PC-모바일 비교) Tool</div>
+  <div class="nav">
+    <button class="nav-btn active" onclick="switchTab('tab1')">기아</button>
+    <button class="nav-btn" onclick="switchTab('tab2')">현대</button>
+  </div>
+  <div id="tab1" class="tab-content active tab-section">
+    <div class="upload-wrap">
+      <input type="file" id="fileInput1" accept=".html,.htm">
+      <button class="extract-btn" onclick="extract1()" id="extractBtn1" disabled>사양 추출</button>
+    </div>
+    <div class="result-row">
+      <div class="result-box">
+        <button class="copy-btn" onclick="copyResult1('pcResult1')">복사</button>
+        <h3>PC 결과</h3>
+        <div id="pcResult1" style="margin-top:6px;">PC 결과 영역</div>
+      </div>
+      <div class="result-box">
+        <button class="copy-btn" onclick="copyResult1('moResult1')">복사</button>
+        <h3>모바일 결과</h3>
+        <div id="moResult1" style="margin-top:6px;">모바일 결과 영역</div>
+      </div>
+    </div>
+    <script>
+      let htmlContent1 = "";
+      document.getElementById('fileInput1').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+          htmlContent1 = evt.target.result;
+          document.getElementById('extractBtn1').disabled = false;
+        }
+        reader.readAsText(file, 'UTF-8');
+      });
+      function extract1() {
+        if (!htmlContent1) return;
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlContent1, "text/html");
+        const pcResults = [];
+        const pcTrims = doc.querySelectorAll("div.price_list__item");
+        pcTrims.forEach(section => {
+          const trimTag = section.querySelector("h3.price_list__item-title, p.price_list__item-title");
+          const trim = trimTag ? trimTag.textContent.trim().replace(/\s+/g, ' ') : '';
+          if (!trim) return;
+          let output = `▶ ${trim}\n[기본품목]\n`;
+          section.querySelectorAll("div.item_wrap").forEach(wrap => {
+            const category = wrap.querySelector(".item_tit")?.textContent.trim() ?? '';
+            if (category) output += `•${category}\n`;
+            wrap.querySelectorAll("a").forEach(a => {
+              const id = a.getAttribute("data-modal-id")?.trim();
+              const name = a.textContent.trim();
+              if (id && name) output += `${id} ${name}\n`;
+            });
+          });
+          const optionSet = new Set();
+          section.querySelectorAll("td:nth-of-type(3) li a, .accor_con__list li a").forEach(a => {
+            const id = a.getAttribute("data-modal-id")?.trim();
+            const name = a.textContent.trim();
+            if (id && name) optionSet.add(`${id} ${name}`);
+          });
+          if (optionSet.size > 0) {
+            output += `[선택품목]\n`;
+            optionSet.forEach(opt => output += opt + "\n");
+          }
+          pcResults.push(output);
+        });
+        const moResults = [];
+        const moTrims = doc.querySelectorAll(".vicle-price__tabpannel");
+        moTrims.forEach(panel => {
+          const trim = panel.querySelector("caption .vicle-cation-price")?.textContent.trim();
+          if (!trim) return;
+          let output = `▶ ${trim}\n[기본품목]\n`;
+          panel.querySelectorAll(".accordion__list > li").forEach(li => {
+            const cat = li.querySelector("button")?.textContent.trim();
+            if (!cat || cat.includes("선택 품목") || cat === "기아 순정 액세서리") return;
+            output += `•${cat}\n`;
+            li.querySelectorAll("li a").forEach(a => {
+              const id = a.getAttribute("data-modal-id")?.trim();
+              const name = a.textContent.trim();
+              if (id && name) output += `${id} ${name}\n`;
+            });
+          });
+          const moOptionSet = new Set();
+          panel.querySelectorAll("table a[data-modal-id], .accor_con__list li a").forEach(a => {
+            const id = a.getAttribute("data-modal-id")?.trim();
+            const name = a.textContent.trim();
+            if (id && name) moOptionSet.add(`${id} ${name}`);
+          });
+          if (moOptionSet.size > 0) {
+            output += `[선택품목]\n`;
+            moOptionSet.forEach(opt => output += opt + "\n");
+          }
+          moResults.push(output);
+        });
+        document.getElementById("pcResult1").innerText = pcResults.join("\n");
+        document.getElementById("moResult1").innerText = moResults.join("\n");
+      }
+      function copyResult1(id) {
+        const text = document.getElementById(id).innerText;
+        navigator.clipboard.writeText(text).then(() => alert("복사 완료!"));
+      }
+    </script>
+  </div>
+  <div id="tab2" class="tab-content tab-section">
+    <div class="upload-wrap">
+      <input type="file" id="fileInput2" accept=".html,.htm">
+      <button class="extract-btn" onclick="extractCompare2()" id="extractBtn2" disabled>사양 추출</button>
+    </div>
+    <div class="result-row">
+      <div class="result-box">
+        <button class="copy-btn" onclick="copyText2('pcAllText2')">복사</button>
+        <h3>PC 결과</h3>
+        <div id="pcAllText2" style="margin-top:6px;">PC 결과 영역</div>
+      </div>
+      <div class="result-box">
+        <button class="copy-btn" onclick="copyText2('moAllText2')">복사</button>
+        <h3>모바일 결과</h3>
+        <div id="moAllText2" style="margin-top:6px;">모바일 결과 영역</div>
+      </div>
+    </div>
+    <script>
+      let htmlContent2 = "";
+      document.getElementById('fileInput2').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+          htmlContent2 = evt.target.result;
+          document.getElementById('extractBtn2').disabled = false;
+        }
+        reader.readAsText(file, 'UTF-8');
+      });
+      function extractCompare2() {
+        if (!htmlContent2) return;
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlContent2, "text/html");
+        const {pcTrims, allText: pcAllText} = extractPC2(doc);
+        const {moTrims, allText: moAllText} = extractMO2(doc);
+        document.getElementById("pcAllText2").innerText = pcAllText || "PC 결과 없음";
+        document.getElementById("moAllText2").innerText = moAllText || "모바일 결과 없음";
+      }
+      function extractPC2(doc) {
+        const pcTrims = {};
+        let allText = '';
+        doc.querySelectorAll('#price-table tr[data-trim]').forEach(tr => {
+          const en = tr.querySelector('.table-price-title .en')?.textContent.trim() ?? '';
+          const kr = tr.querySelector('.table-price-title .kr')?.textContent.trim() ?? '';
+          const trimKey = en || kr || tr.getAttribute('data-trim');
+          let result = `[${trimKey}]\n`;
+          tr.querySelectorAll('.table-price-title .price').forEach(el => {
+            let desc = el.previousSibling;
+            while (desc && desc.nodeType !== 1 && desc.nodeType !== 3) desc = desc.previousSibling;
+            let label = '';
+            if (desc && desc.textContent) label = desc.textContent.replace(/[\n\r]+/g,'').replace(/<br>/g,' ').trim();
+            result += label ? `${label}: ${el.textContent.trim()}\n` : `${el.textContent.trim()}\n`;
+          });
+          const htmlParts = [];
+          tr.querySelectorAll('ul[data-opts="basic"]').forEach(ul => {
+            ul.querySelectorAll('li').forEach(li => {
+              const cat = li.querySelector('.name')?.textContent.trim() ?? '';
+              const opts = Array.from(li.querySelectorAll('.spec_opts')).map(x => x.textContent.trim());
+              if (cat) {
+                htmlParts.push(`<div class="option-cat">• ${cat}</div><ul class="option-list">${opts.map(x=>`<li>${x}</li>`).join('')}</ul>`);
+                result += `•${cat}\n`;
+              }
+              opts.forEach(opt => { if (opt) result += `  - ${opt}\n`; });
+            });
+          });
+          const selects = [];
+          tr.querySelectorAll('.table-acodian-list ul[data-opts="select"]').forEach(ul => {
+            ul.querySelectorAll('li').forEach(li => {
+              const name = li.querySelector('.item-name')?.textContent.trim() ?? '';
+              const price = li.querySelector('.item-price')?.textContent.trim() ?? '';
+              if(name) selects.push({name, price});
+            });
+          });
+          if (selects.length) {
+            result += `[선택품목]\n`;
+            selects.forEach(x =>
+              result += `  - ${x.name}${x.price ? ` (${x.price})` : ''}\n`
+            );
+          }
+          result += '\n';
+          pcTrims[trimKey] = {
+            en, kr,
+            prices: Array.from(tr.querySelectorAll('.table-price-title .price')).map((el, idx) => {
+              let desc = el.previousSibling;
+              while (desc && desc.nodeType !== 1 && desc.nodeType !== 3) desc = desc.previousSibling;
+              let label = '';
+              if (desc && desc.textContent) label = desc.textContent.replace(/[\n\r]+/g,'').replace(/<br>/g,' ').trim();
+              return (label ? label + ': ' : '') + el.textContent.trim();
+            }),
+            html: htmlParts.join(''),
+            selects
+          };
+          allText += result;
+        });
+        return { pcTrims, allText: allText.trim() };
+      }
+      function extractMO2(doc) {
+        const moTrims = {};
+        let allText = '';
+        doc.querySelectorAll('.mob-only [data-trim]').forEach(div => {
+          const en = div.querySelector('.table-price-title .en')?.textContent.trim() ??
+                     div.querySelector('.floating-title .en')?.textContent.trim() ?? '';
+          const kr = div.querySelector('.table-price-title .kr')?.textContent.trim() ??
+                     div.querySelector('.floating-title .kr')?.textContent.trim() ?? '';
+          const trimKey = en || kr || div.getAttribute('data-trim');
+          let result = `[${trimKey}]\n`;
+          const prices = Array.from(div.querySelectorAll('.table-price-title .price')).map((el, idx) => {
+            let desc = el.previousSibling;
+            while (desc && desc.nodeType !== 1 && desc.nodeType !== 3) desc = desc.previousSibling;
+            let label = '';
+            if (desc && desc.textContent) label = desc.textContent.replace(/[\n\r]+/g,'').replace(/<br>/g,' ').trim();
+            result += label ? `${label}: ${el.textContent.trim()}\n` : `${el.textContent.trim()}\n`;
+            return (label ? label + ': ' : '') + el.textContent.trim();
+          });
+          const htmlParts = [];
+          div.querySelectorAll('ul[data-opts="basic"]').forEach(ul => {
+            ul.querySelectorAll('li').forEach(li => {
+              const cat = li.querySelector('button')?.textContent.trim() ?? '';
+              const opts = Array.from(li.querySelectorAll('.spec_opts')).map(x => x.textContent.trim());
+              if (cat) {
+                htmlParts.push(`<div class="option-cat">• ${cat}</div><ul class="option-list">${opts.map(x=>`<li>${x}</li>`).join('')}</ul>`);
+                result += `•${cat}\n`;
+              }
+              opts.forEach(opt => { if (opt) result += `  - ${opt}\n`; });
+            });
+          });
+          const selects = [];
+          div.querySelectorAll('.list-item ul[data-opts="select"]').forEach(ul => {
+            ul.querySelectorAll('li').forEach(li => {
+              const name = li.querySelector('.item-name')?.textContent.trim() ?? '';
+              const price = li.querySelector('.item-price')?.textContent.trim() ?? '';
+              if(name) selects.push({name, price});
+            });
+          });
+          div.querySelectorAll('ul[data-opts="select"]').forEach(ul => {
+            if(!ul.closest('.list-item')) {
+              ul.querySelectorAll('li').forEach(li => {
+                const name = li.querySelector('.item-name')?.textContent.trim() ?? '';
+                const price = li.querySelector('.item-price')?.textContent.trim() ?? '';
+                if(name) selects.push({name, price});
+              });
+            }
+          });
+          const seen = new Set();
+          const filtered = selects.filter(x => {
+            const key = x.name+'||'+x.price;
+            if(seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+          if (filtered.length) {
+            result += `[선택품목]\n`;
+            filtered.forEach(x =>
+              result += `  - ${x.name}${x.price ? ` (${x.price})` : ''}\n`
+            );
+          }
+          result += '\n';
+          moTrims[trimKey] = {
+            en, kr, prices, html: htmlParts.join(''), selects: filtered
+          };
+          allText += result;
+        });
+        return { moTrims, allText: allText.trim() };
+      }
+      function copyText2(id) {
+        const text = document.getElementById(id).innerText;
+        navigator.clipboard.writeText(text).then(() => alert("복사 완료!"));
+      }
+    </script>
+  </div>
+  <script>
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(el=>el.classList.remove('active'));
+      document.querySelectorAll('.nav-btn').forEach(btn=>btn.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      const idx = (tabId === "tab1") ? 0 : 1;
+      document.querySelectorAll('.nav-btn')[idx].classList.add('active');
+    }
+  </script>
+</body>
+</html>
